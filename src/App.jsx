@@ -153,11 +153,11 @@ function App() {
     setCurrentJson(jsonString)
     parseJsonContent(jsonString)
     
-    // Update the content of the selected history item
+    // Update the content and time of the selected history item
     if (selectedHistoryId) {
       setHistory(prev => prev.map(item =>
         item.id === selectedHistoryId
-          ? { ...item, content: jsonString, size: new Blob([jsonString]).size }
+          ? { ...item, content: jsonString, size: new Blob([jsonString]).size, createdAt: Date.now() }
           : item
       ))
     }

@@ -1,39 +1,29 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, crosshairCursor, highlightSpecialChars, Decoration } from '@codemirror/view'
 import { json } from '@codemirror/lang-json'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language'
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import './JsonEditor.css'
 
-// State effect to update diff decorations
 const setDiffDecorations = StateEffect.define()
 
-// State field to hold diff decorations
 const diffField = StateField.define({
-  create() {
-    return Decoration.none
-  },
+  create() { return Decoration.none },
   update(decorations, tr) {
     for (const e of tr.effects) {
-      if (e.is(setDiffDecorations)) {
-        return e.value
-      }
+      if (e.is(setDiffDecorations)) return e.value
     }
     return tr.docChanged ? decorations.map(tr.changes) : decorations
   },
   provide: f => EditorView.decorations.from(f)
 })
 
-// Create decoration for a diff line
-function createDiffDecoration(lineNum, status) {
-  const lineDec = Decoration.line({
-    attributes: { class: `diff-line-${status}` }
-  })
-  return lineDec
+function createDiffDecoration(status) {
+  return Decoration.line({ attributes: { class: `diff-line-${status}` } })
 }
 
 function JsonEditor({ value, onChange, error, diffResult, compareWithId, compareWithName, onClearCompare }) {
@@ -42,37 +32,21 @@ function JsonEditor({ value, onChange, error, diffResult, compareWithId, compare
   const onChangeRef = useRef(onChange)
   const skipUpdateRef = useRef(false)
 
-  // Keep onChangeRef current
-  useEffect(() => {
-    onChangeRef.current = onChange
-  }, [onChange])
+  useEffect(() => { onChangeRef.current = onChange }, [onChange])
 
-  // Update diff decorations when diffResult changes
   useEffect(() => {
     if (viewRef.current && diffResult) {
       const doc = viewRef.current.state.doc
       const decorations = []
-      
       for (let i = 1; i <= doc.lines; i++) {
         const line = doc.line(i)
         const status = diffResult.diffLines.get(i)
-        if (status) {
-          decorations.push(createDiffDecoration(i, status).range(line.from))
-        }
+        if (status) decorations.push(createDiffDecoration(status).range(line.from))
       }
-      
-      // Sort decorations by position (required by CodeMirror)
       decorations.sort((a, b) => a.from - b.from)
-      
-      const decorationSet = Decoration.set(decorations)
-      viewRef.current.dispatch({
-        effects: setDiffDecorations.of(decorationSet)
-      })
+      viewRef.current.dispatch({ effects: setDiffDecorations.of(Decoration.set(decorations)) })
     } else if (viewRef.current && !diffResult) {
-      // Clear decorations
-      viewRef.current.dispatch({
-        effects: setDiffDecorations.of(Decoration.none)
-      })
+      viewRef.current.dispatch({ effects: setDiffDecorations.of(Decoration.none) })
     }
   }, [diffResult])
 
@@ -89,7 +63,6 @@ function JsonEditor({ value, onChange, error, diffResult, compareWithId, compare
           crosshairCursor(),
           highlightSpecialChars(),
           history(),
-          foldGutter(),
           indentOnInput(),
           bracketMatching(),
           closeBrackets(),
@@ -101,32 +74,61 @@ function JsonEditor({ value, onChange, error, diffResult, compareWithId, compare
             ...searchKeymap,
             ...historyKeymap,
             ...completionKeymap,
+            ...foldKeymap,
           ]),
+          foldGutter({
+            openText: '▼',
+            closedText: '▶',
+          }),
           json(),
           oneDark,
           syntaxHighlighting(defaultHighlightStyle),
           diffField,
+          EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !skipUpdateRef.current) {
-              const newValue = update.state.doc.toString()
-              onChangeRef.current(newValue)
+              onChangeRef.current(update.state.doc.toString())
             }
           }),
           EditorView.theme({
-            '&': {
-              height: '100%',
-              fontSize: '14px',
+            '&': { height: '100%', fontSize: '14px' },
+            '.cm-scroller': { overflow: 'auto' },
+            '.cm-editor': { height: '100%' },
+            '.cm-content': { minHeight: '100%' },
+            // Gutters layout
+            '.cm-gutters': {
+              borderRight: '1px solid #3e3e42',
+              backgroundColor: '#252526',
             },
-            '.cm-scroller': {
-              overflow: 'auto',
+            // Line numbers
+            '.cm-lineNumbers .cm-gutterElement': {
+              minWidth: '35px',
+              padding: '0 4px 0 4px',
             },
-            '.cm-editor': {
-              height: '100%',
+            // Fold gutter - close to content
+            '.cm-foldGutter .cm-gutterElement': {
+              width: '18px',
+              minWidth: '18px',
+              padding: '0',
+              cursor: 'pointer',
+              fontSize: '10px',
+              color: '#858585',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.12s ease',
             },
-            '.cm-content': {
-              minHeight: '100%',
+            '.cm-foldGutter .cm-gutterElement:hover': {
+              color: '#cccccc',
             },
-            // Diff line styles
+            '.cm-foldPlaceholder': {
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#858585',
+              padding: '0 4px',
+              cursor: 'pointer',
+            },
+            // Diff lines
             '.diff-line-added': {
               backgroundColor: 'rgba(105, 219, 124, 0.15)',
               borderLeft: '3px solid #69db7c',
@@ -143,10 +145,7 @@ function JsonEditor({ value, onChange, error, diffResult, compareWithId, compare
         ],
       })
 
-      viewRef.current = new EditorView({
-        state,
-        parent: editorRef.current,
-      })
+      viewRef.current = new EditorView({ state, parent: editorRef.current })
     }
 
     return () => {
@@ -163,16 +162,9 @@ function JsonEditor({ value, onChange, error, diffResult, compareWithId, compare
       if (value !== currentValue) {
         skipUpdateRef.current = true
         viewRef.current.dispatch({
-          changes: {
-            from: 0,
-            to: viewRef.current.state.doc.length,
-            insert: value || '',
-          },
+          changes: { from: 0, to: viewRef.current.state.doc.length, insert: value || '' },
         })
-        // Reset skip flag after dispatch
-        requestAnimationFrame(() => {
-          skipUpdateRef.current = false
-        })
+        requestAnimationFrame(() => { skipUpdateRef.current = false })
       }
     }
   }, [value])

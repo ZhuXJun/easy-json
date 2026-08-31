@@ -9,7 +9,8 @@ function JsonTree({ data, error, onDataChange }) {
 
   const filteredData = useMemo(() => {
     if (!searchTerm || !data) return data
-    return filterJson(data, searchTerm.toLowerCase())
+    const result = filterJson(data, searchTerm.toLowerCase())
+    return result !== undefined ? result : null
   }, [data, searchTerm])
 
   const handleCopy = useCallback(async (text) => {
@@ -121,6 +122,34 @@ function JsonTree({ data, error, onDataChange }) {
     return (...args) => handler(parentPath, ...args)
   }, [])
 
+  // Selected path state
+  const [selectedPath, setSelectedPath] = useState([])
+
+  const handleSelectPath = useCallback((path) => {
+    setSelectedPath(path)
+  }, [])
+
+  // Convert path to structure string like a:{b:{c}}
+  const pathToStructure = (path) => {
+    if (path.length === 0) return 'root'
+    let result = 'root'
+    for (const key of path) {
+      result += `:${key}`
+    }
+    return result
+  }
+
+  // Copy path structure
+  const handleCopyPath = useCallback(async () => {
+    const path = selectedPath || []
+    const structure = pathToStructure(path)
+    try {
+      await navigator.clipboard.writeText(structure)
+    } catch (e) {
+      console.error('Failed to copy path:', e)
+    }
+  }, [selectedPath])
+
   return (
     <div className="json-tree">
       <div className="tree-header">
@@ -158,6 +187,8 @@ function JsonTree({ data, error, onDataChange }) {
             onEditKey={handleEditKey}
             onDelete={handleDelete}
             expandAll={expandAll}
+            selectedPath={selectedPath}
+            onSelectPath={handleSelectPath}
           />
         ) : (
           <div className="tree-empty">
@@ -165,6 +196,25 @@ function JsonTree({ data, error, onDataChange }) {
           </div>
         )}
       </div>
+
+      {/* Path breadcrumb */}
+      {data && (
+        <div className="tree-path-bar" onClick={handleCopyPath} title="Click to copy path">
+          <span className="tree-path-label">Path:</span>
+          <span className="tree-path-text">
+            {!selectedPath || selectedPath.length === 0
+              ? 'root'
+              : ['root', ...selectedPath].map((p, i) => (
+                  <span key={i}>
+                    {i > 0 && <span className="tree-path-sep"> &gt; </span>}
+                    <span className="tree-path-item">{p}</span>
+                  </span>
+                ))
+            }
+          </span>
+          <span className="tree-path-copy">📋</span>
+        </div>
+      )}
 
       {/* Copy success notification */}
       {copySuccess && (
@@ -177,7 +227,7 @@ function JsonTree({ data, error, onDataChange }) {
 }
 
 // Wrapper component to handle paths
-function TreeNodeWithPath({ keyName, value, depth, searchTerm, path, onCopy, onEdit, onEditKey, onDelete, expandAll }) {
+function TreeNodeWithPath({ keyName, value, depth, searchTerm, path, onCopy, onEdit, onEditKey, onDelete, expandAll, selectedPath, onSelectPath }) {
   const isObject = value !== null && typeof value === 'object'
   const isArray = Array.isArray(value)
   const entries = isObject ? Object.entries(value) : []
@@ -188,6 +238,9 @@ function TreeNodeWithPath({ keyName, value, depth, searchTerm, path, onCopy, onE
   const [editValue, setEditValue] = useState('')
   const menuRef = useRef(null)
   const inputRef = useRef(null)
+
+  // Check if this node is selected
+  const isSelected = selectedPath && JSON.stringify(selectedPath) === JSON.stringify(path)
 
   // Sync with expandAll prop
   useEffect(() => {
@@ -292,10 +345,13 @@ function TreeNodeWithPath({ keyName, value, depth, searchTerm, path, onCopy, onE
   }
 
   return (
-    <div className="tree-node" style={{ paddingLeft: `${depth * 16}px` }}>
+    <div className={`tree-node ${isSelected ? 'tree-node-selected' : ''}`} style={{ paddingLeft: `${depth * 16}px` }}>
       <div 
         className="tree-node-content" 
-        onClick={toggleExpand}
+        onClick={(e) => {
+          toggleExpand()
+          onSelectPath && onSelectPath(path)
+        }}
         onContextMenu={handleContextMenu}
       >
         {isObject ? (
@@ -377,8 +433,14 @@ function TreeNodeWithPath({ keyName, value, depth, searchTerm, path, onCopy, onE
               onEditKey={onEditKey}
               onDelete={onDelete}
               expandAll={expandAll}
+              selectedPath={selectedPath}
+              onSelectPath={onSelectPath}
             />
           ))}
+          <div className="tree-close-bracket" style={{ paddingLeft: `${depth * 16}px` }}>
+            <span className="tree-spacer" />
+            <span className="tree-bracket">{isArray ? ']' : '}'}</span>
+          </div>
         </div>
       )}
       {contextMenu && (
@@ -417,28 +479,51 @@ function TreeNodeWithPath({ keyName, value, depth, searchTerm, path, onCopy, onE
 
 function filterJson(obj, searchTerm) {
   if (typeof obj !== 'object' || obj === null) {
-    return obj
+    // Leaf value - check if it matches
+    if (typeof obj === 'string' && obj.toLowerCase().includes(searchTerm)) {
+      return obj
+    }
+    if (String(obj).toLowerCase().includes(searchTerm)) {
+      return obj
+    }
+    return undefined
   }
 
   if (Array.isArray(obj)) {
-    return obj.map(item => filterJson(item, searchTerm)).filter(item => item !== undefined)
+    const filtered = obj
+      .map(item => filterJson(item, searchTerm))
+      .filter(item => item !== undefined)
+    return filtered.length > 0 ? filtered : undefined
   }
 
   const result = {}
+  let hasMatch = false
+
   for (const [key, value] of Object.entries(obj)) {
     const keyMatch = key.toLowerCase().includes(searchTerm)
-    const valueMatch = typeof value === 'string' && value.toLowerCase().includes(searchTerm)
 
-    if (keyMatch || valueMatch) {
+    if (keyMatch) {
+      // Key matches - include the whole value
       result[key] = value
+      hasMatch = true
     } else if (typeof value === 'object' && value !== null) {
+      // Recurse into objects/arrays
       const filtered = filterJson(value, searchTerm)
-      if (Object.keys(filtered).length > 0) {
+      if (filtered !== undefined) {
         result[key] = filtered
+        hasMatch = true
+      }
+    } else {
+      // Check primitive value
+      const valueMatch = String(value).toLowerCase().includes(searchTerm)
+      if (valueMatch) {
+        result[key] = value
+        hasMatch = true
       }
     }
   }
-  return result
+
+  return hasMatch ? result : undefined
 }
 
 export default JsonTree

@@ -1,8 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
 let mainWindow
+
+// Remove default menu bar
+Menu.setApplicationMenu(null)
 
 // History file path - stored in app's user data directory
 const getHistoryPath = () => {

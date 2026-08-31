@@ -81,6 +81,12 @@
   overflow: auto;
 }
 
+.editor-content .cm-content {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+}
+
 /* Scrollbar styles */
 ::-webkit-scrollbar {
   width: 10px;
@@ -102,4 +108,39 @@
 
 ::-webkit-scrollbar-corner {
   background: var(--bg-secondary);
+}
+
+/* CodeMirror search panel */
+.cm-panel.cm-search {
+  padding: 6px 10px !important;
+  font-size: 13px !important;
+  gap: 6px !important;
+}
+
+.cm-panel.cm-search input[type="text"],
+.cm-panel.cm-search .cm-textfield {
+  font-size: 14px !important;
+  padding: 4px 8px !important;
+  min-width: 200px !important;
+  height: 28px !important;
+  border-radius: 4px !important;
+}
+
+.cm-panel.cm-search button {
+  font-size: 12px !important;
+  padding: 4px 10px !important;
+  height: 28px !important;
+  border-radius: 4px !important;
+  white-space: nowrap !important;
+}
+
+.cm-panel.cm-search label {
+  font-size: 12px !important;
+  white-space: nowrap !important;
+}
+
+.cm-panel.cm-search .cm-searchResults {
+  font-size: 12px !important;
+  min-width: 60px !important;
+  text-align: center !important;
 }

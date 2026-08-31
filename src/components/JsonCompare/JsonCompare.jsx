@@ -12,63 +12,21 @@ function sortJsonKeys(obj) {
   return result
 }
 
-// Deep collect all leaf values with their paths
-function collectLeaves(obj, path = '') {
-  const leaves = []
-  if (obj === null || typeof obj !== 'object') {
-    leaves.push({ path, value: obj })
-    return leaves
-  }
-  if (Array.isArray(obj)) {
-    obj.forEach((item, i) => {
-      leaves.push(...collectLeaves(item, `${path}[${i}]`))
-    })
-  } else {
-    for (const key of Object.keys(obj)) {
-      const childPath = path ? `${path}.${key}` : key
-      leaves.push(...collectLeaves(obj[key], childPath))
-    }
-  }
-  return leaves
-}
-
-// Deep collect all values (for value-only mode)
-function collectValues(obj) {
-  const values = []
-  if (obj === null || typeof obj !== 'object') {
-    values.push(obj)
-    return values
-  }
-  if (Array.isArray(obj)) {
-    obj.forEach(item => values.push(...collectValues(item)))
-  } else {
-    for (const val of Object.values(obj)) {
-      values.push(...collectValues(val))
-    }
-  }
-  return values
-}
-
-// Compute diff with rootPath mode
 function computeDiffWithRootPath(text1, text2) {
   try {
     const obj1 = JSON.parse(text1)
     const obj2 = JSON.parse(text2)
     const sorted1 = JSON.stringify(sortJsonKeys(obj1), null, 2)
     const sorted2 = JSON.stringify(sortJsonKeys(obj2), null, 2)
-
     const lines1 = sorted1.split('\n')
     const lines2 = sorted2.split('\n')
     const maxLen = Math.max(lines1.length, lines2.length)
-
     const result1 = []
     const result2 = []
     let diffCount = 0
-
     for (let i = 0; i < maxLen; i++) {
       const l1 = i < lines1.length ? lines1[i] : null
       const l2 = i < lines2.length ? lines2[i] : null
-
       if (l1 === l2) {
         result1.push({ text: l1, status: 'same' })
         result2.push({ text: l2, status: 'same' })
@@ -78,50 +36,39 @@ function computeDiffWithRootPath(text1, text2) {
         diffCount++
       }
     }
-
     return { left: result1, right: result2, diffCount }
   } catch (e) {
     return null
   }
 }
 
-// Compute diff with value-only mode
 function computeDiffValueOnly(text1, text2) {
   try {
     const obj1 = JSON.parse(text1)
     const obj2 = JSON.parse(text2)
     const sorted1 = JSON.stringify(sortJsonKeys(obj1), null, 2)
     const sorted2 = JSON.stringify(sortJsonKeys(obj2), null, 2)
-
     const lines1 = sorted1.split('\n')
     const lines2 = sorted2.split('\n')
-
-    // Parse each line to extract value
     const parseLineValue = (line) => {
       const match = line.match(/:\s*(.+?)\s*,?\s*$/)
       if (match) return match[1].trim()
       return line.trim()
     }
-
     const maxLen = Math.max(lines1.length, lines2.length)
     const result1 = []
     const result2 = []
     let diffCount = 0
-
     for (let i = 0; i < maxLen; i++) {
       const l1 = i < lines1.length ? lines1[i] : null
       const l2 = i < lines2.length ? lines2[i] : null
-
       if (l1 === l2) {
         result1.push({ text: l1, status: 'same' })
         result2.push({ text: l2, status: 'same' })
       } else {
-        // Check if values are the same (key might be different)
         const v1 = l1 ? parseLineValue(l1) : null
         const v2 = l2 ? parseLineValue(l2) : null
-
         if (v1 === v2 && v1 !== null) {
-          // Same value, different key - mark as same
           result1.push({ text: l1, status: 'same' })
           result2.push({ text: l2, status: 'same' })
         } else {
@@ -131,7 +78,6 @@ function computeDiffValueOnly(text1, text2) {
         }
       }
     }
-
     return { left: result1, right: result2, diffCount }
   } catch (e) {
     return null
@@ -205,6 +151,10 @@ function JsonCompare({ onClose }) {
       setDiffResult(null)
       return
     }
+    if (json1.length > 500000 || json2.length > 500000) {
+      setDiffResult({ left: [], right: [], diffCount: 0, error: 'File too large (>500KB). Click Compare manually.' })
+      return
+    }
     const result = rootPath ? computeDiffWithRootPath(json1, json2) : computeDiffValueOnly(json1, json2)
     setDiffResult(result)
     if (result) {
@@ -219,7 +169,9 @@ function JsonCompare({ onClose }) {
 
   useEffect(() => {
     if (isAutoCompare && json1.trim() && json2.trim() && !error1 && !error2) {
-      const timer = setTimeout(handleCompare, 300)
+      const isLarge = json1.length > 50000 || json2.length > 50000
+      const delay = isLarge ? 1000 : 500
+      const timer = setTimeout(handleCompare, delay)
       return () => clearTimeout(timer)
     }
   }, [json1, json2, error1, error2, isAutoCompare, handleCompare])
@@ -291,7 +243,7 @@ function JsonCompare({ onClose }) {
           <div className="compare-header">
             <h2>JSON Compare</h2>
             <div className="compare-header-actions">
-              <label className="compare-toggle" title="When ON, compares by path+value. When OFF, compares values only (renamed keys with same value are considered equal)">
+              <label className="compare-toggle">
                 <input type="checkbox" checked={rootPath} onChange={(e) => setRootPath(e.target.checked)} />
                 <span>rootPath</span>
               </label>
@@ -336,7 +288,28 @@ function JsonCompare({ onClose }) {
     )
   }
 
-  // Diff mode
+  // Error mode
+  if (diffResult.error) {
+    return (
+      <div className="json-compare-overlay">
+        <div className="json-compare-modal">
+          <div className="compare-header">
+            <h2>JSON Compare</h2>
+            <div className="compare-header-actions">
+              <button className="compare-btn" onClick={() => setDiffResult(null)}>← Edit</button>
+              <button className="compare-btn close" onClick={onClose}>✕</button>
+            </div>
+          </div>
+          <div className="diff-error-large">
+            <span>⚠️ {diffResult.error}</span>
+            <button className="compare-btn" onClick={handleCompare}>Try Compare Anyway</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Diff mode - read only
   return (
     <div className="json-compare-overlay">
       <div className="json-compare-modal">
